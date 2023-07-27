@@ -7,11 +7,10 @@ class Scanner(Lexer):
         IDENTIFIER, INTEGER, FLOAT, STRING,
         
         PLUSEQ, MINUSEQ, MULEQ, DIVEQ, MODEQ, INC, DEC,
-        AND, OR, EQ, NE, GE, LE, PLUS, MINUS, MUL, DIV, NOT, ASSIGN, GT, LT, DOT, MOD,
+        AND, OR, EQ, NE, GE, LE,
         INCLUDE, IMPORT, DEFINE,
         INT, DOUBLE, STRING_T, VOID,
         IF, ELSE, WHILE, DO, FOR, GOTO, CONTINUE, BREAK, RETURN,
-        LPARENT, RPARENT, LBRACKET, RBRACKET, LBRACE, RBRACE, COMMA, COLON, SEMICOLON
         }
 
     IDENTIFIER = r'[a-zA-Z_][a-zA-Z0-9_]*'
@@ -44,25 +43,8 @@ class Scanner(Lexer):
     OR = r'\|\|'
     INC = r'\+\+'
     DEC = r'--'
-    LPARENT = r'\('
-    RPARENT = r'\)'
-    LBRACKET = r'\['
-    RBRACKET = r'\]'
-    LBRACE = r'{'
-    RBRACE = r'}'
-    COMMA = r','
-    COLON = r':'
-    SEMICOLON = r';'
-    PLUS = r'\+'
-    MINUS = r'-'
-    MUL = r'\*'
-    DIV = r'\\'
-    NOT = r'!'
-    ASSIGN = r'='
-    GT = r'>'
-    LT = r'<'
-    DOT = r'\.'
-    MOD = r'%'
+
+    literals = {'(', ')', '[', ']', '{', '}', ',', ':', ';', '+', '-', '*', '/', '!', '=', '>', '<', '.', '%'}
 
     INCLUDE = r'\#include'
     DEFINE = r'\#define'
