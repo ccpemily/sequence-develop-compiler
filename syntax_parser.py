@@ -62,7 +62,7 @@ class SyntaxAnalyzer(Parser):
     def postfix_expr(self, p):
         ret = Call()
         if(isinstance(p.postfix_expr, IdentifierRef)):
-            ret.function_ref = p.postdix_expr
+            ret.function_ref = p.postfix_expr
             ret.arg_list = []
             return ret 
         else:
@@ -138,8 +138,8 @@ class SyntaxAnalyzer(Parser):
     def add_expr(self, p):
         ret = BinOp()
         ret.op = p[1]
-        ret.l_opd = p.mult_expr
-        ret.r_opd = p.cast_expr
+        ret.l_opd = p.add_expr
+        ret.r_opd = p.mult_expr
         return ret
     
     @_('add_expr')
@@ -149,8 +149,8 @@ class SyntaxAnalyzer(Parser):
     def rel_expr(self, p):
         ret = BinOp()
         ret.op = p[1]
-        ret.l_opd = p.mult_expr
-        ret.r_opd = p.cast_expr
+        ret.l_opd = p.rel_expr
+        ret.r_opd = p.add_expr
         return ret
     
     @_('rel_expr')
@@ -160,8 +160,8 @@ class SyntaxAnalyzer(Parser):
     def eq_expr(self, p):
         ret = BinOp()
         ret.op = p[1]
-        ret.l_opd = p.mult_expr
-        ret.r_opd = p.cast_expr
+        ret.l_opd = p.eq_expr
+        ret.r_opd = p.rel_expr
         return ret
     
     @_('eq_expr')
@@ -171,8 +171,8 @@ class SyntaxAnalyzer(Parser):
     def and_expr(self, p):
         ret = BinOp()
         ret.op = p[1]
-        ret.l_opd = p.mult_expr
-        ret.r_opd = p.cast_expr
+        ret.l_opd = p.and_expr
+        ret.r_opd = p.eq_expr
         return ret
     
     @_('and_expr')
@@ -182,8 +182,8 @@ class SyntaxAnalyzer(Parser):
     def cond_expr(self, p):
         ret = BinOp()
         ret.op = p[1]
-        ret.l_opd = p.mult_expr
-        ret.r_opd = p.cast_expr
+        ret.l_opd = p.cond_expr
+        ret.r_opd = p.and_expr
         return ret
     
     @_('cond_expr')
@@ -193,8 +193,8 @@ class SyntaxAnalyzer(Parser):
     def expr(self, p):
         ret = Assign()
         ret.op = p[1]
-        ret.l_opd = p.mult_expr
-        ret.r_opd = p.cast_expr
+        ret.l_val = p.unary_expr
+        ret.r_val = p.expr
         return ret
     
     @_('PLUSEQ', 'MINUSEQ', 'MULEQ', 'DIVEQ', 'MODEQ', '"="')
@@ -203,34 +203,82 @@ class SyntaxAnalyzer(Parser):
 
     @_('type init_declarator ";"')
     def decl(self, p):
-        return ('decl', p.type, p.init_declarator[0], p.init_declarator[1])
+        ret = Decl()
+        init_declarator = p.init_declarator
+        if(isinstance(init_declarator, IdentifierRef)):
+            declarator = VarDeclarator()
+            declarator.identifier = init_declarator
+            init_declarator = declarator
+        ret.set_declarator(p.type, init_declarator)
+        return ret
     
     @_('declarator')
     def init_declarator(self, p):
-        return (p.declarator, None)
+        return p.declarator
     @_('declarator "=" initializer')
     def init_declarator(self, p):
-        return (p.declarator, p.initializer)
+        if(isinstance(p.declarator, VarDeclarator) or isinstance(p.declarator, ArrayDeclarator)):
+            p.declarator.initializer = p.initializer
+            return p.declarator
+        elif(isinstance(p.declarator, IdentifierRef)):
+            ret = VarDeclarator()
+            ret.identifier = p.declarator
+            ret.initializer = p.initializer
+            return ret
+        else:
+            raise Exception("Can't initialize a function or parameter with initializer")
     
     @_('INT', 'DOUBLE', 'STRING_T', 'VOID')
     def type(self, p):
-        return p[0]
+        return Types.Int if p[0] == 'int' else (Types.Double if p[0] == 'double' else (Types.String if p[0] == 'string' else Types.Void))
     
     @_('IDENTIFIER')
     def declarator(self, p):
-        return p[0]
+        ret = IdentifierRef()
+        ret.name = p[0]
+        return ret
     @_('declarator "(" param_list ")"')
     def declarator(self, p):
-        return ('func_decl', p.declarator, p.param_list)
+        ret = FuncDeclarator()
+        ret.identifier = p.declarator
+        ret.arg_list = p.param_list
+        return ret
     @_('declarator "(" ")"')
     def declarator(self, p):
-        return ('func_decl', p.declarator, None)
-    @_('declarator "[" cond_expr "]"')
+        ret = FuncDeclarator()
+        ret.identifier = p.declarator
+        ret.arg_list = []
+        return ret
+    @_('declarator "[" literal "]"')
     def declarator(self, p):
-        return ('array_decl', p.declarator, p.cond_expr)
+        if(isinstance(p.declarator, IdentifierRef)):
+            ret = ArrayDeclarator()
+            ret.identifier = p.declarator
+            ret.size = [p.literal]
+            return ret
+        elif(isinstance(p.declarator, ArrayDeclarator)):
+            p.declarator.size.append(p.literal)
+            return p.declarator
+        else:
+            raise Exception("Array decl must after an identifier")
     @_('declarator "[" "]"')
     def declarator(self, p):
-        return ('array_decl', p.declarator, None)
+        if(isinstance(p.declarator, IdentifierRef)):
+            ret = ArrayDeclarator()
+            ret.identifier = p.declarator
+            literal = Literal()
+            literal.type_t = Types.Int
+            literal.value = -1
+            ret.size = [literal]
+            return ret
+        elif(isinstance(p.declarator, ArrayDeclarator)):
+            literal = Literal()
+            literal.type_t = Types.Int
+            literal.value = -1
+            p.declarator.size.append(literal)
+            return p.declarator
+        else:
+            raise Exception("Array decl must after an identifier")
     
     @_('param_decl')
     def param_list(self, p):
@@ -242,7 +290,10 @@ class SyntaxAnalyzer(Parser):
 
     @_('type declarator')
     def param_decl(self, p):
-        return ('param_decl', p.type, p.declarator)
+        ret = ParamDeclarator()
+        ret.type_t = p.type
+        ret.set_declarator(p.declarator)
+        return ret
     
     @_('expr')
     def initializer(self, p):
@@ -265,14 +316,20 @@ class SyntaxAnalyzer(Parser):
     
     @_('IDENTIFIER ":" stmt')
     def labeled_stmt(self, p):
-        return ('label_stmt', p.IDENTIFIER, p.stmt)
+        ret = LabeledStmt()
+        ret.label = p.IDENTIFIER
+        ret.stmt = p.stmt
+        return ret
 
     @_('"{" "}"')
     def block_stmt(self, p):
-        return ('empty_block', None)
+        ret = BlockStmt()
+        return ret
     @_('"{" stmt_list "}"')
     def block_stmt(self, p):
-        return ('block_stmt', p[1])
+        ret = BlockStmt()
+        ret.stmt_list = p.stmt_list
+        return ret
 
     @_('stmt')
     def stmt_list(self, p):
@@ -284,46 +341,73 @@ class SyntaxAnalyzer(Parser):
 
     @_('";"')
     def expr_stmt(self, p):
-        return None
+        return ExprStmt()
     @_('expr ";"')
     def expr_stmt(self, p):
-        return ('expr_stmt', p.expr)
+        ret = ExprStmt()
+        ret.expr = p.expr
+        return ret
     @_('decl')
     def expr_stmt(self, p):
-        return ('decl_stmt', p.decl)
+        ret = DeclStmt()
+        ret.decl = p.decl
+        return ret
     
     @_('IF "(" expr ")" stmt')
     def if_stmt(self, p):
-        return ('if_stmt', p.expr, p.stmt, None)
+        ret = IfStmt()
+        ret.cond = p.expr
+        ret.if_branch = p.stmt
+        return ret
     @_('IF "(" expr ")" stmt ELSE stmt')
     def if_stmt(self, p):
-        return ('if_stmt', p.expr, p[4], p[6])
+        ret = IfStmt()
+        ret.cond = p.expr
+        ret.if_branch = p[4]
+        ret.else_branch = p[6]
+        return ret
     
     @_('WHILE "(" expr ")" stmt')
     def loop_stmt(self, p):
-        return ('while_stmt', p.expr, p.stmt)
+        ret = WhileStmt()
+        ret.cond = p.expr
+        ret.stmt = p.stmt
+        return ret
     @_('DO stmt WHILE "(" expr ")" ";"')
     def loop_stmt(self, p):
-        return ('do_while_stmt', p.expr, p.stmt)
+        ret = DoWhileStmt()
+        ret.cond = p.expr
+        ret.stmt = p.stmt
+        return ret
     @_('FOR "(" expr_stmt expr_stmt expr ")" stmt')
     def loop_stmt(self, p):
-        return ('for_stmt', p[2], p[3], p[4], p[6])
+        ret = ForStmt()
+        ret.init = p[2].expr
+        ret.cond = p[3].expr
+        ret.action = p[4]
+        ret.stmt = p[6]
+        return ret
     
     @_('GOTO IDENTIFIER ";"')
     def jump_stmt(self, p):
-        return ('goto_stmt', p.IDENTIFIER)
+        ret = GotoStmt()
+        ret.label = p.IDENTIFIER
+        return ret
     @_('CONTINUE ";"')
     def jump_stmt(self, p):
-        return ('continue_stmt', None)
+        return ContinueStmt()
     @_('BREAK ";"')
     def jump_stmt(self, p):
-        return ('break_stmt', None)
+        return BreakStmt()
     @_('RETURN ";"')
     def jump_stmt(self, p):
-        return ('return_stmt', None)
+        ret = ReturnStmt()
+        return ret
     @_('RETURN expr ";"')
     def jump_stmt(self, p):
-        return ('return_stmt', p.expr)
+        ret = ReturnStmt()
+        ret.returns = p.expr
+        return ret
     
     @_('ext_decl')
     def translation_unit(self, p):
@@ -335,7 +419,9 @@ class SyntaxAnalyzer(Parser):
     
     @_('decl')
     def ext_decl(self, p):
-        return p.decl
+        ret = GlobalVarDecl()
+        ret.decl = p.decl
+        return ret
     @_('func_decl')
     def ext_decl(self, p):
         return p.func_decl
@@ -351,19 +437,34 @@ class SyntaxAnalyzer(Parser):
     
     @_('type declarator block_stmt')
     def func_decl(self, p):
-        return ('func_def', p.type, p.declarator, p.block_stmt)
+        ret = FuncDef()
+        ret.declarator = p.declarator
+        ret.set_type(p.type)
+        ret.func_block = p.block_stmt
+        return ret
     
     @_('INCLUDE STRING')
     def include_decl(self, p):
-        return ('include_def', p.STRING)
+        ret = IncludeDecl()
+        ret.includes = p.STRING
+        return ret
     
     @_('DEFINE IDENTIFIER IDENTIFIER', 'DEFINE IDENTIFIER literal', 'DEFINE IDENTIFIER STRING')
     def define_decl(self, p):
-        return ('macro_def', p[1], p[2])
+        ret = DefineDecl()
+        ret.symbol = p[1]
+        ret.val = p[2]
+        return ret
     
     @_('IMPORT IDENTIFIER INTEGER INTEGER STRING IDENTIFIER')
     def import_decl(self, p):
-        return ('import_def', p[1], p[2], p[3], p[4], p[5])
+        ret = ImportDecl()
+        ret.modules = p[1]
+        ret.id_x = p[2]
+        ret.id_y = p[3]
+        ret.filename = p[4]
+        ret.symbol = p[5]
+        return ret
     
     def error(self, p):
         if(p):
