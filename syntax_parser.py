@@ -1,3 +1,4 @@
+from astree import *
 from sly import Parser
 from scanner import Scanner
 
@@ -14,20 +15,28 @@ class SyntaxAnalyzer(Parser):
 
     @_('INTEGER')
     def literal(self, p):
-        return ('int', p.INTEGER)
+        ret = Literal()
+        ret.type_t = Types.Int
+        ret.value = p.INTEGER
+        return ret
     @_('FLOAT')
     def literal(self, p):
-        return ('float', p.FLOAT)
+        ret = Literal()
+        ret.type_t = Types.Double
+        ret.value = p.FLOAT
+        return ret
 
     # primary_expr -> IDENTIFIER
     @_('IDENTIFIER')
     def primary_expr(self, p):
-        return ('identifier_ref', p.IDENTIFIER)
+        ret = IdentifierRef()
+        ret.name = p.IDENTIFIER
+        return ret
     @_('literal')
     def primary_expr(self, p):
         return p.literal
     # primary_expr -> (expr)
-    @_('LPARENT expr RPARENT')
+    @_('"(" expr ")"')
     def primary_expr(self, p):
         return p.expr
     
@@ -36,26 +45,51 @@ class SyntaxAnalyzer(Parser):
     def postfix_expr(self, p):
         return p.primary_expr
     # postfix_expr -> postfix_expr[expr]
-    @_('postfix_expr LBRACKET expr RBRACKET')
+    @_('postfix_expr "[" expr "]"')
     def postfix_expr(self, p):
-        return ('array_index', p.postfix_expr, p.expr)
-    @_('postfix_expr LPARENT RPARENT')
+        if(isinstance(p.postfix_expr, ArrayIndex)):
+            p.postfix_expr.indexes.append(p.expr)
+            return p.postfix_expr
+        else:
+            ret = ArrayIndex()
+            if(isinstance(p.postfix_expr, IdentifierRef)):
+                ret.base_ref = p.postfix_expr
+                ret.indexes = [ p.expr ]
+                return ret
+            else:
+                raise Exception("Indexes can only apply to variable refs")
+    @_('postfix_expr "(" ")"')
     def postfix_expr(self, p):
-        return ('func_call', p.postfix_expr, None)
-    @_('postfix_expr LPARENT arg_expr_list RPARENT')
+        ret = Call()
+        if(isinstance(p.postfix_expr, IdentifierRef)):
+            ret.function_ref = p.postdix_expr
+            ret.arg_list = []
+            return ret 
+        else:
+            raise Exception("Function call can only apply to existed func ref")
+    @_('postfix_expr "(" arg_expr_list ")"')
     def postfix_expr(self, p):
-        return ('func_call', p.postfix_expr, p.arg_expr_list)
-    @_('postfix_expr DOT IDENTIFIER')
+        ret = Call()
+        if(isinstance(p.postfix_expr, IdentifierRef)):
+            ret.function_ref = p.postfix_expr
+            ret.arg_list = p.arg_expr_list
+            return ret 
+        else:
+            raise Exception("Function call can only apply to existed func ref")
+    @_('postfix_expr "." IDENTIFIER')
     def postfix_expr(self, p):
         return ('member_ref', p.postfix_expr, p.IDENTIFIER)
     @_('postfix_expr INC', 'postfix_expr DEC')
     def postfix_expr(self, p):
-        return ('unary_expr', p[1], p.postfix_expr)
+        ret = UnaryOp()
+        ret.op = p[1]
+        ret.opd = p.postfix_expr
+        return ret
 
     @_('expr')
     def arg_expr_list(self, p):
         return [p.expr]
-    @_('arg_expr_list COMMA expr')
+    @_('arg_expr_list "," expr')
     def arg_expr_list(self, p):
         p.arg_expr_list.append(p.expr)
         return p.arg_expr_list
@@ -65,14 +99,23 @@ class SyntaxAnalyzer(Parser):
         return p.postfix_expr
     @_('INC unary_expr', 'DEC unary_expr')
     def unary_expr(self, p):
-        return ('unary_expr', p[0], p.unary_expr)
-    @_('PLUS cast_expr', 'MINUS cast_expr', 'NOT cast_expr')
+        ret = UnaryOp()
+        ret.op = p[0]
+        ret.opd = p.unary_expr
+        return ret
+    @_('"+" cast_expr', '"-" cast_expr', '"!" cast_expr')
     def unary_expr(self, p):
-        return ('unary_expr', p[0], p.cast_expr)
+        ret = UnaryOp()
+        ret.op = p[0]
+        ret.opd = p.unary_expr
+        return ret
     
-    @_('LPARENT type RPARENT cast_expr')
+    @_('"(" type ")" cast_expr')
     def cast_expr(self, p):
-        return ('cast_expr', p.type, p.cast_expr)
+        ret = Cast()
+        ret.ret_type = p.type
+        ret.opd = p.cast_expr
+        return ret
     @_('unary_expr')
     def cast_expr(self, p):
         return p.unary_expr
@@ -80,64 +123,92 @@ class SyntaxAnalyzer(Parser):
     @_('cast_expr')
     def mult_expr(self, p):
         return p.cast_expr
-    @_('mult_expr MUL cast_expr', 'mult_expr DIV cast_expr', 'mult_expr MOD cast_expr')
+    @_('mult_expr "*" cast_expr', 'mult_expr "/" cast_expr', 'mult_expr "%" cast_expr')
     def mult_expr(self, p):
-        return ('binary_expr', p[1], p.mult_expr, p.cast_expr)
+        ret = BinOp()
+        ret.op = p[1]
+        ret.l_opd = p.mult_expr
+        ret.r_opd = p.cast_expr
+        return ret
     
     @_('mult_expr')
     def add_expr(self, p):
         return p.mult_expr
-    @_('add_expr PLUS mult_expr', 'add_expr MINUS mult_expr')
+    @_('add_expr "+" mult_expr', 'add_expr "-" mult_expr')
     def add_expr(self, p):
-        return ('binary_expr', p[1], p.add_expr, p.mult_expr)
+        ret = BinOp()
+        ret.op = p[1]
+        ret.l_opd = p.mult_expr
+        ret.r_opd = p.cast_expr
+        return ret
     
     @_('add_expr')
     def rel_expr(self, p):
         return p.add_expr
-    @_('rel_expr GT add_expr', 'rel_expr LT add_expr', 'rel_expr GE add_expr', 'rel_expr LE add_expr')
+    @_('rel_expr ">" add_expr', 'rel_expr "<" add_expr', 'rel_expr GE add_expr', 'rel_expr LE add_expr')
     def rel_expr(self, p):
-        return ('binary_expr', p[1], p.rel_expr, p.add_expr)
+        ret = BinOp()
+        ret.op = p[1]
+        ret.l_opd = p.mult_expr
+        ret.r_opd = p.cast_expr
+        return ret
     
     @_('rel_expr')
     def eq_expr(self, p):
         return p.rel_expr
     @_('eq_expr EQ rel_expr', 'eq_expr NE rel_expr')
     def eq_expr(self, p):
-        return ('binary_expr', p[1], p.eq_expr, p.rel_expr)
+        ret = BinOp()
+        ret.op = p[1]
+        ret.l_opd = p.mult_expr
+        ret.r_opd = p.cast_expr
+        return ret
     
     @_('eq_expr')
     def and_expr(self, p):
         return p.eq_expr
     @_('and_expr AND eq_expr')
     def and_expr(self, p):
-        return ('binary_expr', p[1], p.and_expr, p.eq_expr)
+        ret = BinOp()
+        ret.op = p[1]
+        ret.l_opd = p.mult_expr
+        ret.r_opd = p.cast_expr
+        return ret
     
     @_('and_expr')
     def cond_expr(self, p):
         return p.and_expr
     @_('cond_expr OR and_expr')
     def cond_expr(self, p):
-        return ('binary_expr', p[1], p.cond_expr, p.and_expr)
+        ret = BinOp()
+        ret.op = p[1]
+        ret.l_opd = p.mult_expr
+        ret.r_opd = p.cast_expr
+        return ret
     
     @_('cond_expr')
     def expr(self, p):
         return p.cond_expr
     @_('unary_expr assignment_op expr')
     def expr(self, p):
-        return ('assign_expr', p.assignment_op, p.unary_expr, p.expr)
+        ret = Assign()
+        ret.op = p[1]
+        ret.l_opd = p.mult_expr
+        ret.r_opd = p.cast_expr
+        return ret
     
-    @_('PLUSEQ', 'MINUSEQ', 'MULEQ', 'DIVEQ', 'MODEQ', 'ASSIGN')
+    @_('PLUSEQ', 'MINUSEQ', 'MULEQ', 'DIVEQ', 'MODEQ', '"="')
     def assignment_op(self, p):
         return p[0]
 
-    @_('type init_declarator SEMICOLON')
+    @_('type init_declarator ";"')
     def decl(self, p):
-        return ('decl', p.type, p.init_declarator)
+        return ('decl', p.type, p.init_declarator[0], p.init_declarator[1])
     
     @_('declarator')
     def init_declarator(self, p):
         return (p.declarator, None)
-    @_('declarator ASSIGN initializer')
+    @_('declarator "=" initializer')
     def init_declarator(self, p):
         return (p.declarator, p.initializer)
     
@@ -148,23 +219,23 @@ class SyntaxAnalyzer(Parser):
     @_('IDENTIFIER')
     def declarator(self, p):
         return p[0]
-    @_('declarator LPARENT param_list RPARENT')
+    @_('declarator "(" param_list ")"')
     def declarator(self, p):
         return ('func_decl', p.declarator, p.param_list)
-    @_('declarator LPARENT RPARENT')
+    @_('declarator "(" ")"')
     def declarator(self, p):
         return ('func_decl', p.declarator, None)
-    @_('declarator LBRACKET cond_expr RBRACKET')
+    @_('declarator "[" cond_expr "]"')
     def declarator(self, p):
         return ('array_decl', p.declarator, p.cond_expr)
-    @_('declarator LBRACKET RBRACKET')
+    @_('declarator "[" "]"')
     def declarator(self, p):
         return ('array_decl', p.declarator, None)
     
     @_('param_decl')
     def param_list(self, p):
         return [p.param_decl]
-    @_('param_list COMMA param_decl')
+    @_('param_list "," param_decl')
     def param_list(self, p):
         p.param_list.append(p.param_decl)
         return p.param_list
@@ -176,14 +247,14 @@ class SyntaxAnalyzer(Parser):
     @_('expr')
     def initializer(self, p):
         return p.expr
-    @_('LBRACE initializer_list RBRACE')
+    @_('"{" initializer_list "}"')
     def initializer(self, p):
         return p.initializer_list
     
     @_('initializer')
     def initializer_list(self, p):
         return [p.initializer]
-    @_('initializer_list COMMA initializer')
+    @_('initializer_list "," initializer')
     def initializer_list(self, p):
         p.initializer_list.append(p.initializer)
         return p.initializer_list
@@ -192,24 +263,16 @@ class SyntaxAnalyzer(Parser):
     def stmt(self, p):
         return p[0]
     
-    @_('IDENTIFIER COLON stmt')
+    @_('IDENTIFIER ":" stmt')
     def labeled_stmt(self, p):
         return ('label_stmt', p.IDENTIFIER, p.stmt)
 
-    @_('LBRACE RBRACE')
+    @_('"{" "}"')
     def block_stmt(self, p):
         return ('empty_block', None)
-    @_('LBRACE stmt_list RBRACE')
+    @_('"{" stmt_list "}"')
     def block_stmt(self, p):
         return ('block_stmt', p[1])
-    
-    @_('decl')
-    def decl_list(self, p):
-        return [p.decl]
-    @_('decl_list decl')
-    def decl_list(self, p):
-        p.decl_list.append(p.decl)
-        return p.decl_list
 
     @_('stmt')
     def stmt_list(self, p):
@@ -219,46 +282,46 @@ class SyntaxAnalyzer(Parser):
         p.stmt_list.append(p.stmt)
         return p.stmt_list
 
-    @_('SEMICOLON')
+    @_('";"')
     def expr_stmt(self, p):
         return None
-    @_('expr SEMICOLON')
+    @_('expr ";"')
     def expr_stmt(self, p):
         return ('expr_stmt', p.expr)
     @_('decl')
     def expr_stmt(self, p):
         return ('decl_stmt', p.decl)
     
-    @_('IF LPARENT expr RPARENT stmt')
+    @_('IF "(" expr ")" stmt')
     def if_stmt(self, p):
         return ('if_stmt', p.expr, p.stmt, None)
-    @_('IF LPARENT expr RPARENT stmt ELSE stmt')
+    @_('IF "(" expr ")" stmt ELSE stmt')
     def if_stmt(self, p):
         return ('if_stmt', p.expr, p[4], p[6])
     
-    @_('WHILE LPARENT expr RPARENT stmt')
+    @_('WHILE "(" expr ")" stmt')
     def loop_stmt(self, p):
         return ('while_stmt', p.expr, p.stmt)
-    @_('DO stmt WHILE LPARENT expr RPARENT SEMICOLON')
+    @_('DO stmt WHILE "(" expr ")" ";"')
     def loop_stmt(self, p):
         return ('do_while_stmt', p.expr, p.stmt)
-    @_('FOR LPARENT expr_stmt expr_stmt expr RPARENT stmt')
+    @_('FOR "(" expr_stmt expr_stmt expr ")" stmt')
     def loop_stmt(self, p):
         return ('for_stmt', p[2], p[3], p[4], p[6])
     
-    @_('GOTO IDENTIFIER SEMICOLON')
+    @_('GOTO IDENTIFIER ";"')
     def jump_stmt(self, p):
         return ('goto_stmt', p.IDENTIFIER)
-    @_('CONTINUE SEMICOLON')
+    @_('CONTINUE ";"')
     def jump_stmt(self, p):
         return ('continue_stmt', None)
-    @_('BREAK SEMICOLON')
+    @_('BREAK ";"')
     def jump_stmt(self, p):
         return ('break_stmt', None)
-    @_('RETURN SEMICOLON')
+    @_('RETURN ";"')
     def jump_stmt(self, p):
         return ('return_stmt', None)
-    @_('RETURN expr SEMICOLON')
+    @_('RETURN expr ";"')
     def jump_stmt(self, p):
         return ('return_stmt', p.expr)
     
