@@ -1,6 +1,5 @@
 from enum import Enum
 
-
 class Types(Enum):
     Int = 'int'
     Double = 'double'
@@ -23,6 +22,8 @@ class ComplexType(object):
         self.arg_list = arg_list.copy()
     
     def __eq__(self, other):
+        if not isinstance(other, ComplexType):
+            other = ComplexType(other)
         # Return type or base type not match
         if(self.base_type != other.base_type):
             return False
@@ -53,6 +54,21 @@ class ComplexType(object):
         else:
             raise Exception("Trying to simplify a true complex type")
         
+    def can_override(self, other) -> bool:
+        if not self.is_func() or not other.is_func():
+            return False
+        if self == other:
+            return False
+        if len(self.arg_list) != len(other.arg_list):
+            return True
+        else:
+            has_same_param = True
+            for i in range(len(self.arg_list)):
+                if(self.arg_list[i] != other.arg_list[i]):
+                    has_same_param = False
+            return not has_same_param
+
+        
     def __repr__(self):
         if(self.is_simple()):
             return self.simplify().value
@@ -63,14 +79,13 @@ class ComplexType(object):
             for arg in self.arg_list:
                 args.append(arg)
             return '(' + str(args)[1:-1] + ') -> ' + self.base_type.value 
-        
-class DeclTable(object):
-
-    pass
 
 
 class ASTNode(object):
     pass
+
+class ASTRoot(ASTNode):
+    decls = []
 
 class Literal(ASTNode):
     type_t:Types = None
@@ -81,9 +96,17 @@ class Literal(ASTNode):
 
 class IdentifierRef(ASTNode):
     name = ''
+    type_t = Types.Void
 
     def __repr__(self):
         return '%s' % self.name
+    
+class IdentifierDecl(ASTNode):
+    name = ''
+
+    def __repr__(self):
+        return '%s' % self.name
+
 
 class BinOp(ASTNode):
     ret_type:Types = None
@@ -207,7 +230,7 @@ class ParamDeclarator(ASTNode):
         if(isinstance(declarator, VarDeclarator)):
             self.identifier = declarator.identifier
             self.type_t = ComplexType(self.type_t)
-        elif(isinstance(declarator, IdentifierRef)):
+        elif(isinstance(declarator, IdentifierDecl)):
             self.identifier = declarator
             self.type_t = ComplexType(self.type_t)
         elif(isinstance(declarator, ArrayDeclarator)):

@@ -205,7 +205,7 @@ class SyntaxAnalyzer(Parser):
     def decl(self, p):
         ret = Decl()
         init_declarator = p.init_declarator
-        if(isinstance(init_declarator, IdentifierRef)):
+        if(isinstance(init_declarator, IdentifierDecl)):
             declarator = VarDeclarator()
             declarator.identifier = init_declarator
             init_declarator = declarator
@@ -220,7 +220,7 @@ class SyntaxAnalyzer(Parser):
         if(isinstance(p.declarator, VarDeclarator) or isinstance(p.declarator, ArrayDeclarator)):
             p.declarator.initializer = p.initializer
             return p.declarator
-        elif(isinstance(p.declarator, IdentifierRef)):
+        elif(isinstance(p.declarator, IdentifierDecl)):
             ret = VarDeclarator()
             ret.identifier = p.declarator
             ret.initializer = p.initializer
@@ -234,7 +234,7 @@ class SyntaxAnalyzer(Parser):
     
     @_('IDENTIFIER')
     def declarator(self, p):
-        ret = IdentifierRef()
+        ret = IdentifierDecl()
         ret.name = p[0]
         return ret
     @_('declarator "(" param_list ")"')
@@ -251,7 +251,7 @@ class SyntaxAnalyzer(Parser):
         return ret
     @_('declarator "[" literal "]"')
     def declarator(self, p):
-        if(isinstance(p.declarator, IdentifierRef)):
+        if(isinstance(p.declarator, IdentifierDecl)):
             ret = ArrayDeclarator()
             ret.identifier = p.declarator
             ret.size = [p.literal]
@@ -263,7 +263,7 @@ class SyntaxAnalyzer(Parser):
             raise Exception("Array decl must after an identifier")
     @_('declarator "[" "]"')
     def declarator(self, p):
-        if(isinstance(p.declarator, IdentifierRef)):
+        if(isinstance(p.declarator, IdentifierDecl)):
             ret = ArrayDeclarator()
             ret.identifier = p.declarator
             literal = Literal()
@@ -411,10 +411,12 @@ class SyntaxAnalyzer(Parser):
     
     @_('ext_decl')
     def translation_unit(self, p):
-        return [p.ext_decl]
+        ret = ASTRoot()
+        ret.decls.append(p.ext_decl)
+        return ret
     @_('translation_unit ext_decl')
     def translation_unit(self, p):
-        p.translation_unit.append(p.ext_decl)
+        p.translation_unit.decls.append(p.ext_decl)
         return p.translation_unit
     
     @_('decl')
